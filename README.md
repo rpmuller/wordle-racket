@@ -2,9 +2,13 @@
 A simple wordle clone written in Racket and using the 2htdp/image library for the graphics.
 
 To start a new game, load the file in DrRacket, then grab a game instance by typing into the REPL:
+
     (define game (play-wordle)
+    
 Guesses are made by typing words into the game instance:
+    
     (game "audio") ; My standard first word
+    
 The REPL will respond with the colored text and a keyboard image of guessed letters.
 
 There's a known bug with double letters that I have yet to fix.
