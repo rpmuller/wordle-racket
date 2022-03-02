@@ -16,3 +16,5 @@ There's a known bug with double letters that I have yet to fix.
 Next step is to use the 2htdp libraries to make a gui version.
 
 It's also worth looking at [Peter Norvig's Wordle Pytude](https://github.com/norvig/pytudes/blob/main/ipynb/Wordle.ipynb) to see how a really excellent programmer tackles this. I only found the site as I was uploading this program, and I expect it will lead to some simplifications in my code.
+
+The standard (pre-NYT) wordle lists can be downloaded from: [wordle-answers-alphabetical](https://gist.github.com/cfreshman/a03ef2cba789d8cf00c08f767e0fad7b) and [wordle-allowed-guesses.txt](https://gist.github.com/cfreshman/cdcdf777450c5b5301e439061d29694c).
