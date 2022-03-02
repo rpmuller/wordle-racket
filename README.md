@@ -3,7 +3,7 @@ A simple wordle clone written in Racket and using the 2htdp/image library for th
 
 To start a new game, load the file in DrRacket, then grab a game instance by typing into the REPL:
 
-    (define game (play-wordle)
+    (define game (play-wordle))
     
 Guesses are made by typing words into the game instance:
     
