@@ -1,102 +1,89 @@
 #lang racket
 
-;; Todo: coloring of multiple letters, when only a single one is in the answer
-;;   Also explore how this is manifest in the keyboard printout.
-
 (require rackunit
          2htdp/image)
 
-(define (read-words-from-file fname)
-  (let* ((in (open-input-file fname))
-        (data (port->string in))
-        (words (string-split data "\n")))
-    words))
+(define (read-words-from-file fname) (string-split (port->string (open-input-file fname)) "\n"))
 
-;; You can get the wordlists from:
+;; Get the wordlists from:
 ;;   https://gist.github.com/cfreshman/a03ef2cba789d8cf00c08f767e0fad7b
 ;;   https://gist.github.com/cfreshman/cdcdf777450c5b5301e439061d29694c
-(define answers
-  (read-words-from-file "wordle-answers-alphabetical.txt")) 
-(define allowed-guesses
-  (read-words-from-file "wordle-allowed-guesses.txt")) 
+(define answers (read-words-from-file "wordle-answers-alphabetical.txt")) 
+(define allowed-guesses (read-words-from-file "wordle-allowed-guesses.txt"))
+(define (random-list-element xs) (list-ref xs (random (length xs))))
+(define (play-wordle) (wordle (random-list-element answers)))
+(define (different-chars guess target)
+  (for/list ((g (string->list guess))
+             (t (string->list target))
+             #:unless (eq? g t)) t))
 
-(define (random-word)
-  (list-ref answers (random (length answers))))
+; This is a racket version of Norvig's code at https://github.com/norvig/pytudes/blob/main/ipynb/Wordle.ipynb
+(define (reply-for guess target)
+  (let* ([reply (naive-reply guess target)]
+         [count (counter (different-chars guess target))])
+    (for/list ([g guess] [t target] [r (naive-reply guess target)])
+      (if (and (eq? r ".") (> (hash-ref count g 0) 0))
+          (begin
+            (set! count (hash-update count g sub1))
+            "Y")
+          r))))
 
-(define (read-guess)
-  (let loop ((word (read-line)))
-    (cond ((not (= (string-length word) 5)) (loop (read-line)))
-          ((not (or (member word allowed-guesses) (member word answers))) (loop (read-line)))
-          (else word))))
+(define (naive-reply guess target)
+  (for/list ([g guess] [t target]) (if (eq? g t) "G" ".")))
 
-(define (letter-color guess-char answer-char all-chars)
-  (cond ((eq? guess-char answer-char) "green")
-        ((member guess-char all-chars) "yellow")
-        (else "gray")))
+(define (counter list)
+  (if (empty? list) (make-immutable-hash)
+      (hash-update (counter (cdr list)) (car list) add1 0)))
 
-(define (score-iter  guess-chars answer-chars all-chars)
-  (if (empty? guess-chars) '()
-      (cons (list (letter-color (car guess-chars) (car answer-chars) all-chars) (car guess-chars))
-            (score-iter (cdr guess-chars) (cdr answer-chars) all-chars))))
+(define (color colorsym)
+  (cond ((eq? colorsym "G") "green")
+        ((eq? colorsym "Y") "yellow")
+        ((eq? colorsym ".") "gray")
+        (else "white")))
 
-(define (score-guess guess answer)
-  (score-iter (string->list guess) (string->list answer) (string->list answer)))
+(define (letterbox char colorsym (height 50) (width 40) (charsize 24))
+  (overlay (text (string-upcase (string char)) charsize "black")
+           (rectangle width height "outline" "black")
+           (rectangle width height "solid" (color colorsym))))
+  
 
-; Utilities to transfer the scored guess to printable text strings:
-(define (sgel-color sgel) (car sgel))
-(define (sgel-letter sgel) (cadr sgel))
-(define (sgel->string sgel) (string-join (list (sgel-color sgel) (string (sgel-letter sgel)))))
-(define (sg->string sg) (string-join (map sgel->string sg)))
+(define (letterword word reply)
+  (apply beside (for/list ([char (string->list word)]
+                           [colorsym reply])
+                  (letterbox char colorsym))))
 
-; Utilities to draw graphical colored letter boxes
-(define (letterbox char color (height 50) (width 40) (charsize 24))
-  (overlay 
-   (text (string-upcase (string char)) charsize "black")
-   (rectangle width height "outline" "black")
-   (rectangle width height "solid" color))
-  )
-
-(define (aligned-letterwords sg) (apply beside (letterwords sg)))
-
-(define (spacer size) (line size size "white"))
-
-(define (keyboard-and-letterwords sg letters-seen)
+(define (keyboard-letterword word reply letters-seen)
   (apply above (list
                 (spacer 10)
-                (aligned-letterwords sg)
+                (letterword word reply)
                 (spacer 10)
                 (keyboard-row "qwertyuiop" letters-seen)
                 (keyboard-row "asdfghjkl" letters-seen)
                 (keyboard-row "zxcvbnm" letters-seen))))
 
+(define (spacer size) (line size size "white"))
+
 (define (keyboard-row letters letters-seen)
   (apply beside
-         (for/list ((char (string->list letters))) (letterbox char (hash-ref letters-seen char "white") 25 20 12))))
+         (for/list ((char (string->list letters))) (letterbox char (hash-ref letters-seen char "w") 25 20 12))))
 
-(define (letterwords sg) (map letterboxed-el sg))
-(define (letterboxed-el sgel)  (letterbox (sgel-letter sgel) (sgel-color sgel)))
+(define (disallowed word) (or (and (not (member word allowed-guesses)) (not (member word answers))) (not (eq? 5 (string-length word)))))
 
-(define (play-wordle)
-  (let ((answer (random-word))
-        (letters-seen (make-hash)))
+(define (update-letters-seen letters-seen word reply)
+  (if (empty? word) letters-seen
+      (hash-set (update-letters-seen letters-seen (cdr word) (cdr reply))
+                (car word) (car reply))))
+
+(define (wordle answer)
+  (let [(letters-seen (make-immutable-hash))]
     (define (guess word)
-      (let ((sg (score-guess word answer)))
-        (if (and (not (member word allowed-guesses))
-                 (not (member word answers))) "Disallowed guess"
+      (let ([reply (reply-for word answer)])
+        (if (disallowed word) "Disallowed word"
             (begin
-              (for ((sgel sg))
-                (let* ((color (sgel-color sgel))
-                       (letter (sgel-letter sgel))
-                       (oldcolor (hash-ref letters-seen letter "gray")))
-                  (cond ((and (eq? color "yellow") (eq? oldcolor "gray")) (hash-set! letters-seen letter "yellow"))
-                        ((eq? color "green") (hash-set! letters-seen letter "green"))
-                        ((and (eq? color "gray") (eq? oldcolor "gray")) (hash-set! letters-seen letter "gray"))
-                        ; else do nothing
-                        )))
-              ;(aligned-letterwords sg)))))
-              (keyboard-and-letterwords sg letters-seen)))))
+              (set! letters-seen (update-letters-seen letters-seen (string->list word) reply))
+              ;(letterword word (reply-for word answer))))))
+              (keyboard-letterword word reply letters-seen)))))
     guess))
-
 
 (define (run-tests)
   ; Check that the files were read in properly
@@ -104,28 +91,22 @@
   (check-equal? (length allowed-guesses) 10657)
 
   ; Check that random word returns a word
-  (check-true (string? (random-word)))
+  (check-true (string? (random-list-element answers)))
 
-  ; Check the letter color results
-  (check-equal? (letter-color #\c #\c '(#\c)) "green")
-  (check-equal? (letter-color #\c #\b '(#\c)) "yellow")
-  (check-equal? (letter-color #\c #\b '(#\b)) "gray")
-
-  ; Check score-guess:
-  (check-equal? (score-guess "choke" "champ") '(("green" #\c) ("green" #\h) ("gray" #\o) ("gray" #\k) ("gray" #\e)))
-  (check-equal? (sg->string (score-guess "choke" "champ")) "green c green h gray o gray k gray e")
-  ; Make sure I handle multiple letters in the wrong place
-  (check-equal? (score-guess "beefy" "refer") '(("gray" #\b) ("green" #\e) ("yellow" #\e) ("yellow" #\f) ("gray" #\y)))
+  ; Tests for reply-for with word "hello"
+  (define (reply-test word) (string-join (reply-for "hello" word) ""))
+  (check-equal? (reply-test "hello") "GGGGG")
+  (check-equal? (reply-test "world") "...GY")
+  (check-equal? (reply-test "cello") ".GGGG")
+  (check-equal? (reply-test "alley") ".YGY.")
+  (check-equal? (reply-test "heavy") "GG...")
+  (check-equal? (reply-test "heart") "GG...")
+  (check-equal? (reply-test "allay") "..GY.")
+  (check-equal? (reply-test "lilac") "..GY.")
   
-
-  ; Check sgel utils
-  (check-equal? (sgel-letter '("green" #\c)) #\c)
-  (check-equal? (sgel-color '("green" #\c)) "green")
-  (check-equal? (sgel->string '("green" #\c)) "green c")
   (printf "Tests passed~n")
-)  
+
+)
 
 (run-tests)
-(aligned-letterwords (score-guess "wordle" "wxodxe"))
-
 
